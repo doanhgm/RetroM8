@@ -29,16 +29,17 @@ class PlayActivity : AppCompatActivity() {
     private lateinit var leftPanel: LinearLayout
     private lateinit var rightPanel: LinearLayout
 
-    private var isNes = true
+    private var system = "NES"
+    private var accentColor = Color.parseColor("#FFE53935")
     private var isFullZoom = false
     private var isFastForward = false
-    private var gameName = "game"
+    private var savePrefix = "NES_game"
 
     private val rootDir by lazy { File(Environment.getExternalStorageDirectory(), "RetroM8") }
     private val savesDir by lazy { File(rootDir, "Saves").apply { mkdirs() } }
     private val biosDir by lazy { File(rootDir, "BIOS").apply { mkdirs() } }
 
-    // Bộ xử lý bắn liên thanh Turbo cho NES (nút X -> Turbo A, nút Y -> Turbo B)
+    // Turbo bắn liên thanh cho NES & GBA (nút X -> Turbo A, nút Y -> Turbo B)
     private val turboHandler = Handler(Looper.getMainLooper())
     private var turboAActive = false
     private var turboBActive = false
@@ -60,15 +61,27 @@ class PlayActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         hideSystemUI()
 
-        val system = intent.getStringExtra("SYSTEM") ?: "NES"
+        system = intent.getStringExtra("SYSTEM") ?: "NES"
         val romPath = intent.getStringExtra("ROM_PATH") ?: return finish()
-        gameName = intent.getStringExtra("GAME_NAME") ?: "game"
-        isNes = (system == "NES")
+        val gameName = intent.getStringExtra("GAME_NAME") ?: "game"
+        savePrefix = "${system}_${gameName}"
 
-        val coreName = if (isNes) "libfceumm.so" else "libpcsx_rearmed.so"
+        accentColor = when (system) {
+            "SNES" -> Color.parseColor("#FF7E57C2")
+            "GBA" -> Color.parseColor("#FF3949AB")
+            "PS1" -> Color.parseColor("#FFD81B60")
+            else -> Color.parseColor("#FFE53935")
+        }
+
+        val coreName = when (system) {
+            "SNES" -> "libsnes9x.so"
+            "GBA" -> "libmgba.so"
+            "PS1" -> "libpcsx_rearmed.so"
+            else -> "libfceumm.so"
+        }
         val corePath = File(applicationInfo.nativeLibraryDir, coreName).absolutePath
 
-        val sramFile = File(savesDir, "$gameName.srm")
+        val sramFile = File(savesDir, "$savePrefix.srm")
         val data = GLRetroViewData(this).apply {
             coreFilePath = corePath
             gameFilePath = romPath
@@ -107,7 +120,7 @@ class PlayActivity : AppCompatActivity() {
             setBackgroundColor(Color.parseColor("#0B0B0D"))
         }
 
-        // 1. Màn hình game ở giữa (tỷ lệ 4:3)
+        // 1. Màn hình game ở giữa
         gameContainer = FrameLayout(this).apply {
             addView(
                 retroView,
@@ -119,7 +132,7 @@ class PlayActivity : AppCompatActivity() {
         }
         root.addView(gameContainer)
 
-        // 2. Cụm điều khiển bên trái (L1/L2, SELECT, D-PAD, MENU/ZOOM)
+        // 2. Cụm điều khiển bên trái
         leftPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -131,14 +144,24 @@ class PlayActivity : AppCompatActivity() {
             )
         }
 
-        if (!isNes) {
-            val shouldersLeft = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36))
+        when (system) {
+            "PS1" -> {
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36))
+                }
+                row.addView(createHoldKeyButton("L2", KeyEvent.KEYCODE_BUTTON_L2, 1f))
+                row.addView(createHoldKeyButton("L1", KeyEvent.KEYCODE_BUTTON_L1, 1f))
+                leftPanel.addView(row)
             }
-            shouldersLeft.addView(createHoldKeyButton("L2", KeyEvent.KEYCODE_BUTTON_L2, 1f))
-            shouldersLeft.addView(createHoldKeyButton("L1", KeyEvent.KEYCODE_BUTTON_L1, 1f))
-            leftPanel.addView(shouldersLeft)
+            "SNES", "GBA" -> {
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36))
+                }
+                row.addView(createHoldKeyButton("L", KeyEvent.KEYCODE_BUTTON_L1, 1f))
+                leftPanel.addView(row)
+            }
         }
 
         val selectRow = LinearLayout(this).apply {
@@ -150,7 +173,7 @@ class PlayActivity : AppCompatActivity() {
         selectRow.addView(createHoldKeyButton("SELECT", KeyEvent.KEYCODE_BUTTON_SELECT, 1f))
         leftPanel.addView(selectRow)
 
-        val dpad = DPadView(this) { keyCode, pressed ->
+        val dpad = DPadView(this, accentColor) { keyCode, pressed ->
             val action = if (pressed) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP
             retroView.sendKeyEvent(action, keyCode, 0)
         }.apply {
@@ -168,7 +191,7 @@ class PlayActivity : AppCompatActivity() {
         leftBottom.addView(createActionChip("ZOOM") { toggleZoom() })
         leftPanel.addView(leftBottom)
 
-        // 3. Cụm điều khiển bên phải (R1/R2, START, XYAB, SAVE/LOAD/2X)
+        // 3. Cụm điều khiển bên phải
         rightPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -180,14 +203,24 @@ class PlayActivity : AppCompatActivity() {
             )
         }
 
-        if (!isNes) {
-            val shouldersRight = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36))
+        when (system) {
+            "PS1" -> {
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36))
+                }
+                row.addView(createHoldKeyButton("R1", KeyEvent.KEYCODE_BUTTON_R1, 1f))
+                row.addView(createHoldKeyButton("R2", KeyEvent.KEYCODE_BUTTON_R2, 1f))
+                rightPanel.addView(row)
             }
-            shouldersRight.addView(createHoldKeyButton("R1", KeyEvent.KEYCODE_BUTTON_R1, 1f))
-            shouldersRight.addView(createHoldKeyButton("R2", KeyEvent.KEYCODE_BUTTON_R2, 1f))
-            rightPanel.addView(shouldersRight)
+            "SNES", "GBA" -> {
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36))
+                }
+                row.addView(createHoldKeyButton("R", KeyEvent.KEYCODE_BUTTON_R1, 1f))
+                rightPanel.addView(row)
+            }
         }
 
         val startRow = LinearLayout(this).apply {
@@ -199,7 +232,7 @@ class PlayActivity : AppCompatActivity() {
         startRow.addView(createHoldKeyButton("START", KeyEvent.KEYCODE_BUTTON_START, 1f))
         rightPanel.addView(startRow)
 
-        val actionPad = ActionPadView(this, isNes) { btn, pressed ->
+        val actionPad = ActionPadView(this, system) { btn, pressed ->
             handleActionPad(btn, pressed)
         }.apply {
             layoutParams = LinearLayout.LayoutParams(
@@ -226,7 +259,7 @@ class PlayActivity : AppCompatActivity() {
 
     private fun handleActionPad(btn: String, pressed: Boolean) {
         val action = if (pressed) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP
-        if (isNes) {
+        if (system == "NES" || system == "GBA") {
             when (btn) {
                 "A" -> retroView.sendKeyEvent(action, KeyEvent.KEYCODE_BUTTON_A, 0)
                 "B" -> retroView.sendKeyEvent(action, KeyEvent.KEYCODE_BUTTON_B, 0)
@@ -235,10 +268,10 @@ class PlayActivity : AppCompatActivity() {
             }
         } else {
             val code = when (btn) {
-                "A" -> KeyEvent.KEYCODE_BUTTON_A // Circle
-                "B" -> KeyEvent.KEYCODE_BUTTON_B // Cross
-                "X" -> KeyEvent.KEYCODE_BUTTON_X // Triangle
-                "Y" -> KeyEvent.KEYCODE_BUTTON_Y // Square
+                "A" -> KeyEvent.KEYCODE_BUTTON_A
+                "B" -> KeyEvent.KEYCODE_BUTTON_B
+                "X" -> KeyEvent.KEYCODE_BUTTON_X
+                "Y" -> KeyEvent.KEYCODE_BUTTON_Y
                 else -> return
             }
             retroView.sendKeyEvent(action, code, 0)
@@ -270,7 +303,7 @@ class PlayActivity : AppCompatActivity() {
             setStroke(2, Color.parseColor("#FF42424C"))
         }
         val activeBg = GradientDrawable().apply {
-            setColor(Color.parseColor("#FFE53935"))
+            setColor(accentColor)
             cornerRadius = 12f
             setStroke(2, Color.WHITE)
         }
@@ -325,15 +358,16 @@ class PlayActivity : AppCompatActivity() {
     private fun updateGameViewport() {
         val screenW = resources.displayMetrics.widthPixels
         val screenH = resources.displayMetrics.heightPixels
+        val aspect = if (system == "GBA") 3f / 2f else 4f / 3f
 
         val (targetW, targetH) = if (isFullZoom) {
             val h = screenH
-            val w = minOf(screenW, (h * 4f / 3f).toInt())
+            val w = minOf(screenW, (h * aspect).toInt())
             w to h
         } else {
             val availW = screenW - dp(304)
-            val hFromW = (availW * 3f / 4f).toInt()
-            if (hFromW <= screenH) availW to hFromW else (screenH * 4f / 3f).toInt() to screenH
+            val hFromW = (availW / aspect).toInt()
+            if (hFromW <= screenH) availW to hFromW else (screenH * aspect).toInt() to screenH
         }
 
         gameContainer.layoutParams = FrameLayout.LayoutParams(targetW, targetH, Gravity.CENTER)
@@ -357,7 +391,7 @@ class PlayActivity : AppCompatActivity() {
         Thread {
             val ok = runCatching {
                 val bytes = retroView.serializeState()
-                File(savesDir, "$gameName.state").writeBytes(bytes)
+                File(savesDir, "$savePrefix.state").writeBytes(bytes)
                 true
             }.getOrDefault(false)
             runOnUiThread {
@@ -367,7 +401,7 @@ class PlayActivity : AppCompatActivity() {
     }
 
     private fun loadState() {
-        val stateFile = File(savesDir, "$gameName.state")
+        val stateFile = File(savesDir, "$savePrefix.state")
         if (!stateFile.exists()) {
             Toast.makeText(this, "Chưa có file lưu màn", Toast.LENGTH_SHORT).show()
             return
@@ -386,7 +420,7 @@ class PlayActivity : AppCompatActivity() {
         runCatching {
             val sram = retroView.serializeSRAM()
             if (sram.isNotEmpty()) {
-                File(savesDir, "$gameName.srm").writeBytes(sram)
+                File(savesDir, "$savePrefix.srm").writeBytes(sram)
             }
         }
         finish()
@@ -397,7 +431,7 @@ class PlayActivity : AppCompatActivity() {
         runCatching {
             val sram = retroView.serializeSRAM()
             if (sram.isNotEmpty()) {
-                File(savesDir, "$gameName.srm").writeBytes(sram)
+                File(savesDir, "$savePrefix.srm").writeBytes(sram)
             }
         }
     }
