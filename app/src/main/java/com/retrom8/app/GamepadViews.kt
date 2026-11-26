@@ -22,11 +22,9 @@ fun Context.hapticTick() {
     }
 }
 
-/**
- * Cụm D-Pad 8 hướng bên trái (hỗ trợ trượt ngón tay không cần nhấc)
- */
 class DPadView(
     context: Context,
+    accentColor: Int,
     private val onDirectionChange: (keyCode: Int, pressed: Boolean) -> Unit
 ) : View(context) {
 
@@ -45,7 +43,7 @@ class DPadView(
         strokeWidth = 3f
     }
     private val activePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#FFE53935")
+        color = accentColor
         style = Paint.Style.FILL
     }
     private val arrowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -62,7 +60,6 @@ class DPadView(
         val arm = size * 0.36f
         val r = arm * 0.3f
 
-        // Vẽ khung chữ thập
         val hRect = RectF(cx - size, cy - arm, cx + size, cy + arm)
         val vRect = RectF(cx - arm, cy - size, cx + arm, cy + size)
         canvas.drawRoundRect(hRect, r, r, basePaint)
@@ -70,13 +67,11 @@ class DPadView(
         canvas.drawRoundRect(hRect, r, r, borderPaint)
         canvas.drawRoundRect(vRect, r, r, borderPaint)
 
-        // Highlight hướng đang bấm
         if (up) canvas.drawRoundRect(RectF(cx - arm, cy - size, cx + arm, cy - arm * 0.3f), r, r, activePaint)
         if (down) canvas.drawRoundRect(RectF(cx - arm, cy + arm * 0.3f, cx + arm, cy + size), r, r, activePaint)
         if (left) canvas.drawRoundRect(RectF(cx - size, cy - arm, cx - arm * 0.3f, cy + arm), r, r, activePaint)
         if (right) canvas.drawRoundRect(RectF(cx + arm * 0.3f, cy - arm, cx + size, cy + arm), r, r, activePaint)
 
-        // Mũi tên chỉ hướng
         arrowPaint.textSize = arm * 0.65f
         val dy = arrowPaint.textSize * 0.35f
         canvas.drawText("▲", cx, cy - size * 0.66f + dy, arrowPaint)
@@ -124,12 +119,9 @@ class DPadView(
     }
 }
 
-/**
- * Cụm 4 nút X Y A B bên phải (hỗ trợ đa điểm giữ 2-3 nút cùng lúc)
- */
 class ActionPadView(
     context: Context,
-    private val isNesMode: Boolean,
+    system: String,
     private val onButtonChange: (btn: String, pressed: Boolean) -> Unit
 ) : View(context) {
 
@@ -143,12 +135,32 @@ class ActionPadView(
         var pressed: Boolean = false
     )
 
-    private val buttons = listOf(
-        PadBtn("X", "X", if (isNesMode) "T-A" else "△", Color.parseColor("#FFFB8C00")),
-        PadBtn("Y", "Y", if (isNesMode) "T-B" else "□", Color.parseColor("#FF8E24AA")),
-        PadBtn("A", "A", if (isNesMode) "" else "○", Color.parseColor("#FFE53935")),
-        PadBtn("B", "B", if (isNesMode) "" else "✕", Color.parseColor("#FF1E88E5"))
-    )
+    private val buttons = when (system) {
+        "SNES" -> listOf(
+            PadBtn("X", "X", "", Color.parseColor("#FF1E88E5")), // Xanh dương SFC
+            PadBtn("Y", "Y", "", Color.parseColor("#FF43A047")), // Xanh lá SFC
+            PadBtn("A", "A", "", Color.parseColor("#FFE53935")), // Đỏ SFC
+            PadBtn("B", "B", "", Color.parseColor("#FFFDD835"))  // Vàng SFC
+        )
+        "GBA" -> listOf(
+            PadBtn("X", "X", "T-A", Color.parseColor("#FF5C6BC0")),
+            PadBtn("Y", "Y", "T-B", Color.parseColor("#FF5C6BC0")),
+            PadBtn("A", "A", "", Color.parseColor("#FF3949AB")),
+            PadBtn("B", "B", "", Color.parseColor("#FF1E88E5"))
+        )
+        "PS1" -> listOf(
+            PadBtn("X", "X", "△", Color.parseColor("#FF43A047")),
+            PadBtn("Y", "Y", "□", Color.parseColor("#FFEC407A")),
+            PadBtn("A", "A", "○", Color.parseColor("#FFE53935")),
+            PadBtn("B", "B", "✕", Color.parseColor("#FF1E88E5"))
+        )
+        else -> listOf( // NES
+            PadBtn("X", "X", "T-A", Color.parseColor("#FFFB8C00")),
+            PadBtn("Y", "Y", "T-B", Color.parseColor("#FF8E24AA")),
+            PadBtn("A", "A", "", Color.parseColor("#FFE53935")),
+            PadBtn("B", "B", "", Color.parseColor("#FF1E88E5"))
+        )
+    }
 
     private var btnRadius = 40f
 
@@ -163,7 +175,7 @@ class ActionPadView(
         typeface = Typeface.DEFAULT_BOLD
     }
     private val subPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#AAFFFFFF")
+        color = Color.parseColor("#CCFFFFFF")
         textAlign = Paint.Align.CENTER
     }
 
