@@ -19,14 +19,24 @@ import java.io.File
 class MainActivity : AppCompatActivity() {
 
     private var currentSystem = "NES"
-    private lateinit var btnNes: Button
-    private lateinit var btnPs1: Button
+    private val tabButtons = mutableMapOf<String, Button>()
+    private lateinit var btnWifi: Button
+    private lateinit var wifiBanner: TextView
     private lateinit var listContainer: LinearLayout
     private lateinit var statusText: TextView
 
     private val rootDir: File by lazy {
         File(Environment.getExternalStorageDirectory(), "RetroM8")
     }
+
+    private var wifiServer: WifiRomServer? = null
+
+    private val systemColors = mapOf(
+        "NES" to "#FFE53935",
+        "SNES" to "#FF7E57C2",
+        "GBA" to "#FF3949AB",
+        "PS1" to "#FFD81B60"
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,46 +58,76 @@ class MainActivity : AppCompatActivity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.parseColor("#111114"))
-            setPadding(24, 18, 24, 18)
+            setPadding(dp(14), dp(10), dp(14), dp(10))
         }
 
-        // Cột trái: Logo + Chọn hệ máy
+        // Cột trái có cuộn dự phòng cho màn ngang
+        val sidebarScroll = ScrollView(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(168), LinearLayout.LayoutParams.MATCH_PARENT)
+            isVerticalScrollBarEnabled = false
+        }
+
         val sidebar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(dp(170), LinearLayout.LayoutParams.MATCH_PARENT)
-            setPadding(0, 0, 20, 0)
+            setPadding(0, 0, dp(12), 0)
         }
 
         val title = TextView(this).apply {
-            text = "RETRO M8"
+            text = "RETRO M8 v2"
             setTextColor(Color.parseColor("#FFE53935"))
-            textSize = 22f
+            textSize = 19f
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(4, 0, 0, 20)
+            setPadding(dp(4), 0, 0, dp(10))
         }
-
-        btnNes = createTabButton("NES (4 Nút)") { switchSystem("NES") }
-        btnPs1 = createTabButton("PS1 (PlayStation)") { switchSystem("PS1") }
-        val btnReload = createTabButton("↻ Quét lại ROM") { loadGames() }.apply {
-            setBackgroundColor(Color.parseColor("#24242B"))
-        }
-
         sidebar.addView(title)
-        sidebar.addView(btnNes)
-        sidebar.addView(btnPs1)
-        sidebar.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(1, 0, 1f) })
-        sidebar.addView(btnReload)
 
-        // Cột phải: Danh sách game
+        val tabs = listOf(
+            "NES" to "NES (4 Nút)",
+            "SNES" to "SNES (Đĩa Mềm)",
+            "GBA" to "GBA (GameBoy)",
+            "PS1" to "PS1 (PlayStation)"
+        )
+        tabs.forEach { (sys, label) ->
+            val btn = createSidebarButton(label) { switchSystem(sys) }
+            tabButtons[sys] = btn
+            sidebar.addView(btn)
+        }
+
+        btnWifi = createSidebarButton("📡 Nạp ROM Wi-Fi") { toggleWifiServer() }.apply {
+            background = roundBg("#FF1E3A2F", "#FF2E7D32")
+            (layoutParams as LinearLayout.LayoutParams).topMargin = dp(8)
+        }
+        val btnReload = createSidebarButton("↻ Quét lại ROM") { loadGames() }.apply {
+            background = roundBg("#FF24242B")
+        }
+
+        sidebar.addView(btnWifi)
+        sidebar.addView(btnReload)
+        sidebarScroll.addView(sidebar)
+
+        // Cột phải: Banner Wi-Fi + Danh sách game
         val rightCol = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
         }
 
+        wifiBanner = TextView(this).apply {
+            visibility = View.GONE
+            setTextColor(Color.WHITE)
+            textSize = 13f
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = roundBg("#FF1B4D3E", "#FF43A047")
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+        }
+
         statusText = TextView(this).apply {
             setTextColor(Color.parseColor("#9E9EA8"))
-            textSize = 13f
-            setPadding(8, 0, 8, 12)
+            textSize = 12f
+            setPadding(dp(4), 0, dp(4), dp(8))
         }
 
         val scrollView = ScrollView(this).apply {
@@ -101,47 +141,83 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
         }
         scrollView.addView(listContainer)
+
+        rightCol.addView(wifiBanner)
         rightCol.addView(statusText)
         rightCol.addView(scrollView)
 
-        root.addView(sidebar)
+        root.addView(sidebarScroll)
         root.addView(rightCol)
         setContentView(root)
     }
 
-    private fun createTabButton(label: String, onClick: () -> Unit): Button {
+    private fun createSidebarButton(label: String, onClick: () -> Unit): Button {
         return Button(this).apply {
             text = label
             isAllCaps = false
             setTextColor(Color.WHITE)
-            textSize = 14f
+            textSize = 13f
             gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            setPadding(24, 16, 16, 16)
+            setPadding(dp(12), 0, dp(10), 0)
+            minHeight = 0
+            minimumHeight = 0
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 12 }
+                dp(36)
+            ).apply { bottomMargin = dp(6) }
             setOnClickListener { onClick() }
         }
     }
 
+    private fun roundBg(fillHex: String, strokeHex: String? = null): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(Color.parseColor(fillHex))
+            cornerRadius = dp(8).toFloat()
+            if (strokeHex != null) setStroke(2, Color.parseColor(strokeHex))
+        }
+    }
+
     private fun updateTabStyles() {
-        val activeBg = GradientDrawable().apply {
-            setColor(Color.parseColor("#FFE53935"))
-            cornerRadius = 14f
+        tabButtons.forEach { (sys, btn) ->
+            val color = if (sys == currentSystem) systemColors[sys] ?: "#FFE53935" else "#FF1D1D24"
+            btn.background = roundBg(color)
         }
-        val normalBg = GradientDrawable().apply {
-            setColor(Color.parseColor("#1D1D24"))
-            cornerRadius = 14f
-        }
-        btnNes.background = if (currentSystem == "NES") activeBg else normalBg
-        btnPs1.background = if (currentSystem == "PS1") activeBg else normalBg
     }
 
     private fun switchSystem(sys: String) {
         currentSystem = sys
         updateTabStyles()
         loadGames()
+    }
+
+    private fun toggleWifiServer() {
+        val current = wifiServer
+        if (current != null && current.isRunning) {
+            current.stop()
+            wifiServer = null
+            wifiBanner.visibility = View.GONE
+            btnWifi.text = "📡 Nạp ROM Wi-Fi"
+            btnWifi.background = roundBg("#FF1E3A2F", "#FF2E7D32")
+            return
+        }
+
+        ensureFolders()
+        val server = WifiRomServer(rootDir, 8080) { sys, fileName ->
+            runOnUiThread {
+                Toast.makeText(this, "Đã nhận [$sys]: $fileName", Toast.LENGTH_SHORT).show()
+                if (sys == currentSystem) loadGames()
+            }
+        }
+        val ip = server.start()
+        if (ip == null) {
+            Toast.makeText(this, "Hãy bật Wi-Fi trên HTC M8 trước!", Toast.LENGTH_SHORT).show()
+            return
+        }
+        wifiServer = server
+        wifiBanner.text = "📡 Mở trình duyệt trên PC vào:  http://$ip:8080  để gửi ROM"
+        wifiBanner.visibility = View.VISIBLE
+        btnWifi.text = "⏹ Tắt Wi-Fi"
+        btnWifi.background = roundBg("#FF6D1B1B", "#FFE53935")
     }
 
     private fun checkPermissionsAndLoad() {
@@ -169,7 +245,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun ensureFolders() {
-        listOf("NES", "PS1", "BIOS", "Saves").forEach {
+        listOf("NES", "SNES", "GBA", "PS1", "BIOS", "Saves").forEach {
             File(rootDir, it).mkdirs()
         }
     }
@@ -179,10 +255,11 @@ class MainActivity : AppCompatActivity() {
         val folder = File(rootDir, currentSystem)
         if (!folder.exists()) folder.mkdirs()
 
-        val validExts = if (currentSystem == "NES") {
-            setOf("nes", "zip")
-        } else {
-            setOf("chd", "pbp", "cue", "iso", "img")
+        val validExts = when (currentSystem) {
+            "NES" -> setOf("nes", "zip")
+            "SNES" -> setOf("sfc", "smc", "zip")
+            "GBA" -> setOf("gba", "zip")
+            else -> setOf("chd", "pbp", "cue", "iso", "img")
         }
 
         val allFiles = folder.listFiles()?.filter { it.isFile } ?: emptyList()
@@ -201,16 +278,17 @@ class MainActivity : AppCompatActivity() {
         statusText.text = "Thư mục: /RetroM8/$currentSystem  •  Tìm thấy ${roms.size} game"
 
         if (roms.isEmpty()) {
+            val hintText = when (currentSystem) {
+                "NES" -> "Chép file .nes / .zip vào RetroM8/NES hoặc bấm 'Nạp ROM Wi-Fi' bên trái."
+                "SNES" -> "Chép file .sfc / .smc / .zip vào RetroM8/SNES hoặc bấm 'Nạp ROM Wi-Fi'."
+                "GBA" -> "Chép file .gba / .zip vào RetroM8/GBA hoặc bấm 'Nạp ROM Wi-Fi'."
+                else -> "Chép file .chd / .pbp / .iso / .cue+.bin vào RetroM8/PS1 (hoặc gửi qua Wi-Fi).\nCó thể bỏ thêm scph1001.bin vào RetroM8/BIOS."
+            }
             val hint = TextView(this).apply {
-                text = "Chưa có game nào trong /RetroM8/$currentSystem\n\n" +
-                    if (currentSystem == "NES") {
-                        "Copy file .nes hoặc .zip vào thư mục RetroM8/NES rồi bấm Quét lại ROM."
-                    } else {
-                        "Copy file .chd, .pbp, .iso hoặc .cue+.bin vào RetroM8/PS1.\n(Khuyên dùng .chd hoặc .pbp cho gọn 1 file duy nhất; có thể bỏ thêm scph1001.bin vào RetroM8/BIOS)."
-                    }
+                text = "Chưa có game $currentSystem nào.\n\n$hintText"
                 setTextColor(Color.parseColor("#B0B0BC"))
                 textSize = 14f
-                setPadding(16, 24, 16, 16)
+                setPadding(dp(8), dp(16), dp(8), dp(12))
             }
             listContainer.addView(hint)
             return
@@ -221,18 +299,16 @@ class MainActivity : AppCompatActivity() {
                 text = "▸  ${rom.nameWithoutExtension}"
                 isAllCaps = false
                 setTextColor(Color.WHITE)
-                textSize = 15f
+                textSize = 14f
                 gravity = Gravity.START or Gravity.CENTER_VERTICAL
-                setPadding(24, 18, 24, 18)
-                background = GradientDrawable().apply {
-                    setColor(Color.parseColor("#1C1C23"))
-                    cornerRadius = 12f
-                    setStroke(2, Color.parseColor("#2E2E38"))
-                }
+                setPadding(dp(14), dp(10), dp(14), dp(10))
+                minHeight = 0
+                minimumHeight = 0
+                background = roundBg("#FF1C1C23", "#FF2E2E38")
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = 10 }
+                ).apply { bottomMargin = dp(8) }
                 setOnClickListener {
                     val intent = Intent(this@MainActivity, PlayActivity::class.java).apply {
                         putExtra("SYSTEM", currentSystem)
@@ -244,6 +320,11 @@ class MainActivity : AppCompatActivity() {
             }
             listContainer.addView(item)
         }
+    }
+
+    override fun onDestroy() {
+        wifiServer?.stop()
+        super.onDestroy()
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
