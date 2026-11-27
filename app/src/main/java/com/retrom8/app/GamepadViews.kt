@@ -38,7 +38,7 @@ class DPadView(
         style = Paint.Style.FILL
     }
     private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#FF42424C")
+        color = Color.parseColor("#FF4A4A56")
         style = Paint.Style.STROKE
         strokeWidth = 3f
     }
@@ -56,9 +56,9 @@ class DPadView(
         super.onDraw(canvas)
         val cx = width / 2f
         val cy = height / 2f
-        val size = min(width, height) * 0.44f
-        val arm = size * 0.36f
-        val r = arm * 0.3f
+        val size = min(width, height) * 0.48f
+        val arm = size * 0.41f
+        val r = arm * 0.28f
 
         val hRect = RectF(cx - size, cy - arm, cx + size, cy + arm)
         val vRect = RectF(cx - arm, cy - size, cx + arm, cy + size)
@@ -67,17 +67,17 @@ class DPadView(
         canvas.drawRoundRect(hRect, r, r, borderPaint)
         canvas.drawRoundRect(vRect, r, r, borderPaint)
 
-        if (up) canvas.drawRoundRect(RectF(cx - arm, cy - size, cx + arm, cy - arm * 0.3f), r, r, activePaint)
-        if (down) canvas.drawRoundRect(RectF(cx - arm, cy + arm * 0.3f, cx + arm, cy + size), r, r, activePaint)
-        if (left) canvas.drawRoundRect(RectF(cx - size, cy - arm, cx - arm * 0.3f, cy + arm), r, r, activePaint)
-        if (right) canvas.drawRoundRect(RectF(cx + arm * 0.3f, cy - arm, cx + size, cy + arm), r, r, activePaint)
+        if (up) canvas.drawRoundRect(RectF(cx - arm, cy - size, cx + arm, cy - arm * 0.25f), r, r, activePaint)
+        if (down) canvas.drawRoundRect(RectF(cx - arm, cy + arm * 0.25f, cx + arm, cy + size), r, r, activePaint)
+        if (left) canvas.drawRoundRect(RectF(cx - size, cy - arm, cx - arm * 0.25f, cy + arm), r, r, activePaint)
+        if (right) canvas.drawRoundRect(RectF(cx + arm * 0.25f, cy - arm, cx + size, cy + arm), r, r, activePaint)
 
-        arrowPaint.textSize = arm * 0.65f
+        arrowPaint.textSize = arm * 0.62f
         val dy = arrowPaint.textSize * 0.35f
-        canvas.drawText("▲", cx, cy - size * 0.66f + dy, arrowPaint)
-        canvas.drawText("▼", cx, cy + size * 0.66f + dy, arrowPaint)
-        canvas.drawText("◄", cx - size * 0.66f, cy + dy, arrowPaint)
-        canvas.drawText("►", cx + size * 0.66f, cy + dy, arrowPaint)
+        canvas.drawText("▲", cx, cy - size * 0.67f + dy, arrowPaint)
+        canvas.drawText("▼", cx, cy + size * 0.67f + dy, arrowPaint)
+        canvas.drawText("◄", cx - size * 0.67f, cy + dy, arrowPaint)
+        canvas.drawText("►", cx + size * 0.67f, cy + dy, arrowPaint)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -89,19 +89,20 @@ class DPadView(
 
         val cx = width / 2f
         val cy = height / 2f
-        val radius = min(width, height) * 0.46f
+        val radius = min(width, height) * 0.48f
         val dx = event.x - cx
         val dy = event.y - cy
         val dist = hypot(dx, dy)
 
-        if (dist < radius * 0.16f) {
+        if (dist < radius * 0.18f) {
             updateState(false, false, false, false)
         } else {
+            // 4 hướng chính rộng 66°, 4 góc chéo thu gọn còn 24° để chống bấm nhầm
             val deg = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble()))
-            val nRight = deg in -67.5..67.5
-            val nDown = deg in 22.5..157.5
-            val nLeft = deg >= 112.5 || deg <= -112.5
-            val nUp = deg in -157.5..-22.5
+            val nRight = deg in -57.0..57.0
+            val nDown = deg in 33.0..147.0
+            val nLeft = deg >= 123.0 || deg <= -123.0
+            val nUp = deg in -147.0..-33.0
             updateState(nUp, nDown, nLeft, nRight)
         }
         return true
@@ -137,10 +138,10 @@ class ActionPadView(
 
     private val buttons = when (system) {
         "SNES" -> listOf(
-            PadBtn("X", "X", "", Color.parseColor("#FF1E88E5")), // Xanh dương SFC
-            PadBtn("Y", "Y", "", Color.parseColor("#FF43A047")), // Xanh lá SFC
-            PadBtn("A", "A", "", Color.parseColor("#FFE53935")), // Đỏ SFC
-            PadBtn("B", "B", "", Color.parseColor("#FFFDD835"))  // Vàng SFC
+            PadBtn("X", "X", "", Color.parseColor("#FF1E88E5")),
+            PadBtn("Y", "Y", "", Color.parseColor("#FF43A047")),
+            PadBtn("A", "A", "", Color.parseColor("#FFE53935")),
+            PadBtn("B", "B", "", Color.parseColor("#FFFDD835"))
         )
         "GBA" -> listOf(
             PadBtn("X", "X", "T-A", Color.parseColor("#FF5C6BC0")),
@@ -154,7 +155,7 @@ class ActionPadView(
             PadBtn("A", "A", "○", Color.parseColor("#FFE53935")),
             PadBtn("B", "B", "✕", Color.parseColor("#FF1E88E5"))
         )
-        else -> listOf( // NES
+        else -> listOf(
             PadBtn("X", "X", "T-A", Color.parseColor("#FFFB8C00")),
             PadBtn("Y", "Y", "T-B", Color.parseColor("#FF8E24AA")),
             PadBtn("A", "A", "", Color.parseColor("#FFE53935")),
@@ -162,7 +163,7 @@ class ActionPadView(
         )
     }
 
-    private var btnRadius = 40f
+    private var btnRadius = 44f
 
     private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -183,8 +184,9 @@ class ActionPadView(
         super.onSizeChanged(w, h, oldw, oldh)
         val cx = w / 2f
         val cy = h / 2f
-        val span = min(w, h) * 0.30f
-        btnRadius = min(w, h) * 0.165f
+        val minDim = min(w, h)
+        val span = minDim * 0.305f
+        btnRadius = minDim * 0.182f
 
         buttons[0].apply { this.cx = cx; this.cy = cy - span } // X (Trên)
         buttons[1].apply { this.cx = cx - span; this.cy = cy } // Y (Trái)
@@ -213,20 +215,34 @@ class ActionPadView(
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val action = event.actionMasked
-        val upIndex = if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP || action == MotionEvent.ACTION_CANCEL) {
+        val upIndex = if (
+            action == MotionEvent.ACTION_UP ||
+            action == MotionEvent.ACTION_POINTER_UP ||
+            action == MotionEvent.ACTION_CANCEL
+        ) {
             event.actionIndex
         } else -1
 
         val newStates = BooleanArray(buttons.size)
         if (action != MotionEvent.ACTION_CANCEL) {
+            val maxHitDist = btnRadius * 1.32f
             for (i in 0 until event.pointerCount) {
                 if (i == upIndex) continue
                 val px = event.getX(i)
                 val py = event.getY(i)
+
+                // Khóa đúng 1 nút gần ngón tay nhất để tránh bấm dính 2 nút
+                var bestIdx = -1
+                var bestDist = Float.MAX_VALUE
                 buttons.forEachIndexed { idx, btn ->
-                    if (hypot(px - btn.cx, py - btn.cy) <= btnRadius * 1.28f) {
-                        newStates[idx] = true
+                    val d = hypot(px - btn.cx, py - btn.cy)
+                    if (d <= maxHitDist && d < bestDist) {
+                        bestDist = d
+                        bestIdx = idx
                     }
+                }
+                if (bestIdx >= 0) {
+                    newStates[bestIdx] = true
                 }
             }
         }
@@ -246,3 +262,4 @@ class ActionPadView(
         return true
     }
 }
+// END GamepadViews
