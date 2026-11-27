@@ -28,10 +28,18 @@ class PlayActivity : AppCompatActivity() {
     private lateinit var gameContainer: FrameLayout
     private lateinit var leftPanel: LinearLayout
     private lateinit var rightPanel: LinearLayout
+    private lateinit var dpadView: DPadView
+    private lateinit var actionPadView: ActionPadView
+    private lateinit var btnSizeChip: TextView
+
+    private val prefs by lazy { getSharedPreferences("retrom8_prefs", MODE_PRIVATE) }
 
     private var system = "NES"
     private var accentColor = Color.parseColor("#FFE53935")
-    private var isFullZoom = false
+    // 0 = Vừa (156dp), 1 = To (192dp), 2 = Siêu to (224dp)
+    private var padSizeIndex = 1
+    // 0 = Vừa khung, 1 = Tràn màn (mờ 70%), 2 = Tràn màn (mờ 45%)
+    private var zoomMode = 1
     private var isFastForward = false
     private var savePrefix = "NES_game"
 
@@ -60,6 +68,9 @@ class PlayActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         hideSystemUI()
+
+        padSizeIndex = prefs.getInt("pref_pad_size", 1).coerceIn(0, 2)
+        zoomMode = prefs.getInt("pref_zoom_mode", 1).coerceIn(0, 2)
 
         system = intent.getStringExtra("SYSTEM") ?: "NES"
         val romPath = intent.getStringExtra("ROM_PATH") ?: return finish()
@@ -115,6 +126,18 @@ class PlayActivity : AppCompatActivity() {
         )
     }
 
+    private fun panelWidthDp(): Int = when (padSizeIndex) {
+        0 -> 156
+        1 -> 192
+        else -> 224
+    }
+
+    private fun padSizeLabel(): String = when (padSizeIndex) {
+        0 -> "CỠ: M"
+        1 -> "CỠ: L"
+        else -> "CỠ: XL"
+    }
+
     private fun setupLayout() {
         val root = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor("#0B0B0D"))
@@ -132,13 +155,15 @@ class PlayActivity : AppCompatActivity() {
         }
         root.addView(gameContainer)
 
+        val initPanelW = dp(panelWidthDp())
+
         // 2. Cụm điều khiển bên trái
         leftPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(8), dp(8), dp(6), dp(8))
+            setPadding(dp(4), dp(6), dp(4), dp(6))
             layoutParams = FrameLayout.LayoutParams(
-                dp(152),
+                initPanelW,
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 Gravity.START
             )
@@ -148,7 +173,7 @@ class PlayActivity : AppCompatActivity() {
             "PS1" -> {
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36))
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(34))
                 }
                 row.addView(createHoldKeyButton("L2", KeyEvent.KEYCODE_BUTTON_L2, 1f))
                 row.addView(createHoldKeyButton("L1", KeyEvent.KEYCODE_BUTTON_L1, 1f))
@@ -157,7 +182,7 @@ class PlayActivity : AppCompatActivity() {
             "SNES", "GBA" -> {
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36))
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(34))
                 }
                 row.addView(createHoldKeyButton("L", KeyEvent.KEYCODE_BUTTON_L1, 1f))
                 leftPanel.addView(row)
@@ -166,14 +191,14 @@ class PlayActivity : AppCompatActivity() {
 
         val selectRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(32)).apply {
-                topMargin = dp(6)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(28)).apply {
+                topMargin = dp(4)
             }
         }
         selectRow.addView(createHoldKeyButton("SELECT", KeyEvent.KEYCODE_BUTTON_SELECT, 1f))
         leftPanel.addView(selectRow)
 
-        val dpad = DPadView(this, accentColor) { keyCode, pressed ->
+        dpadView = DPadView(this, accentColor) { keyCode, pressed ->
             val action = if (pressed) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP
             retroView.sendKeyEvent(action, keyCode, 0)
         }.apply {
@@ -181,23 +206,25 @@ class PlayActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
             )
         }
-        leftPanel.addView(dpad)
+        leftPanel.addView(dpadView)
 
         val leftBottom = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(32))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(28))
         }
         leftBottom.addView(createActionChip("MENU") { saveSramAndExit() })
-        leftBottom.addView(createActionChip("ZOOM") { toggleZoom() })
+        leftBottom.addView(createActionChip("ZOOM") { cycleZoomMode() })
+        btnSizeChip = createActionChip(padSizeLabel()) { cyclePadSize() }
+        leftBottom.addView(btnSizeChip)
         leftPanel.addView(leftBottom)
 
         // 3. Cụm điều khiển bên phải
         rightPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(dp(6), dp(8), dp(8), dp(8))
+            setPadding(dp(4), dp(6), dp(4), dp(6))
             layoutParams = FrameLayout.LayoutParams(
-                dp(152),
+                initPanelW,
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 Gravity.END
             )
@@ -207,7 +234,7 @@ class PlayActivity : AppCompatActivity() {
             "PS1" -> {
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36))
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(34))
                 }
                 row.addView(createHoldKeyButton("R1", KeyEvent.KEYCODE_BUTTON_R1, 1f))
                 row.addView(createHoldKeyButton("R2", KeyEvent.KEYCODE_BUTTON_R2, 1f))
@@ -216,7 +243,7 @@ class PlayActivity : AppCompatActivity() {
             "SNES", "GBA" -> {
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
-                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36))
+                    layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(34))
                 }
                 row.addView(createHoldKeyButton("R", KeyEvent.KEYCODE_BUTTON_R1, 1f))
                 rightPanel.addView(row)
@@ -225,25 +252,25 @@ class PlayActivity : AppCompatActivity() {
 
         val startRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(32)).apply {
-                topMargin = dp(6)
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(28)).apply {
+                topMargin = dp(4)
             }
         }
         startRow.addView(createHoldKeyButton("START", KeyEvent.KEYCODE_BUTTON_START, 1f))
         rightPanel.addView(startRow)
 
-        val actionPad = ActionPadView(this, system) { btn, pressed ->
+        actionPadView = ActionPadView(this, system) { btn, pressed ->
             handleActionPad(btn, pressed)
         }.apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
             )
         }
-        rightPanel.addView(actionPad)
+        rightPanel.addView(actionPadView)
 
         val rightBottom = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(32))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(28))
         }
         rightBottom.addView(createActionChip("SAVE") { saveState() })
         rightBottom.addView(createActionChip("LOAD") { loadState() })
@@ -338,7 +365,7 @@ class PlayActivity : AppCompatActivity() {
         return TextView(this).apply {
             text = label
             setTextColor(Color.parseColor("#D0D0DC"))
-            textSize = 10f
+            textSize = 9.5f
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#AA1B1B22"))
@@ -360,25 +387,59 @@ class PlayActivity : AppCompatActivity() {
         val screenH = resources.displayMetrics.heightPixels
         val aspect = if (system == "GBA") 3f / 2f else 4f / 3f
 
-        val (targetW, targetH) = if (isFullZoom) {
+        // Cập nhật chiều rộng 2 cụm điều khiển (giới hạn tối đa 37% chiều ngang để không chạm nhau)
+        val panelW = minOf(dp(panelWidthDp()), (screenW * 0.37f).toInt())
+        (leftPanel.layoutParams as FrameLayout.LayoutParams).width = panelW
+        (rightPanel.layoutParams as FrameLayout.LayoutParams).width = panelW
+        leftPanel.requestLayout()
+        rightPanel.requestLayout()
+        dpadView.invalidate()
+        actionPadView.invalidate()
+
+        val (targetW, targetH) = if (zoomMode != 0) {
             val h = screenH
             val w = minOf(screenW, (h * aspect).toInt())
             w to h
         } else {
-            val availW = screenW - dp(304)
+            val availW = (screenW - panelW * 2).coerceAtLeast((screenW * 0.52f).toInt())
             val hFromW = (availW / aspect).toInt()
             if (hFromW <= screenH) availW to hFromW else (screenH * aspect).toInt() to screenH
         }
 
         gameContainer.layoutParams = FrameLayout.LayoutParams(targetW, targetH, Gravity.CENTER)
-        val alpha = if (isFullZoom) 0.65f else 1.0f
+
+        val alpha = when (zoomMode) {
+            1 -> 0.70f
+            2 -> 0.45f
+            else -> if (panelW * 2 > screenW - targetW) 0.78f else 1.0f
+        }
         leftPanel.alpha = alpha
         rightPanel.alpha = alpha
     }
 
-    private fun toggleZoom() {
-        isFullZoom = !isFullZoom
+    private fun cyclePadSize() {
+        padSizeIndex = (padSizeIndex + 1) % 3
+        prefs.edit().putInt("pref_pad_size", padSizeIndex).apply()
+        btnSizeChip.text = padSizeLabel()
         updateGameViewport()
+        val msg = when (padSizeIndex) {
+            0 -> "Cỡ phím: Vừa (M)"
+            1 -> "Cỡ phím: To (L)"
+            else -> "Cỡ phím: Siêu to (XL)"
+        }
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun cycleZoomMode() {
+        zoomMode = (zoomMode + 1) % 3
+        prefs.edit().putInt("pref_zoom_mode", zoomMode).apply()
+        updateGameViewport()
+        val msg = when (zoomMode) {
+            0 -> "Màn hình: Vừa khung"
+            1 -> "Màn hình: Tràn viền (Phím mờ vừa)"
+            else -> "Màn hình: Tràn viền (Phím siêu mờ)"
+        }
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
     private fun toggleFastForward() {
@@ -443,3 +504,4 @@ class PlayActivity : AppCompatActivity() {
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 }
+// END PlayActivity
