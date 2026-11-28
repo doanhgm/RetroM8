@@ -45,6 +45,11 @@ class MainActivity : AppCompatActivity() {
         checkPermissionsAndLoad()
     }
 
+    override fun onResume() {
+        super.onResume()
+        hideSystemUI()
+    }
+
     private fun hideSystemUI() {
         @Suppress("DEPRECATION")
         window.decorView.systemUiVisibility = (
@@ -56,115 +61,126 @@ class MainActivity : AppCompatActivity() {
 
     private fun buildLayout() {
         val root = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.parseColor("#111114"))
-            setPadding(dp(14), dp(10), dp(14), dp(10))
-        }
-
-        // Cột trái có cuộn dự phòng cho màn ngang
-        val sidebarScroll = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(168), LinearLayout.LayoutParams.MATCH_PARENT)
-            isVerticalScrollBarEnabled = false
-        }
-
-        val sidebar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(0, 0, dp(12), 0)
+            setBackgroundColor(Color.parseColor("#111114"))
+            setPadding(dp(14), dp(8), dp(14), dp(10))
+        }
+
+        // Thanh tiêu đề gọn ở trên cùng (chỉ hiển thị thông tin, không có nút bấm)
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(6) }
         }
 
         val title = TextView(this).apply {
-            text = "RETRO M8 v2"
+            text = "RETRO M8"
             setTextColor(Color.parseColor("#FFE53935"))
-            textSize = 19f
+            textSize = 18f
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(dp(4), 0, 0, dp(10))
-        }
-        sidebar.addView(title)
-
-        val tabs = listOf(
-            "NES" to "NES (4 Nút)",
-            "SNES" to "SNES (Đĩa Mềm)",
-            "GBA" to "GBA (GameBoy)",
-            "PS1" to "PS1 (PlayStation)"
-        )
-        tabs.forEach { (sys, label) ->
-            val btn = createSidebarButton(label) { switchSystem(sys) }
-            tabButtons[sys] = btn
-            sidebar.addView(btn)
+            setPadding(dp(2), 0, dp(12), 0)
         }
 
-        btnWifi = createSidebarButton("📡 Nạp ROM Wi-Fi") { toggleWifiServer() }.apply {
-            background = roundBg("#FF1E3A2F", "#FF2E7D32")
-            (layoutParams as LinearLayout.LayoutParams).topMargin = dp(8)
-        }
-        val btnReload = createSidebarButton("↻ Quét lại ROM") { loadGames() }.apply {
-            background = roundBg("#FF24242B")
+        statusText = TextView(this).apply {
+            setTextColor(Color.parseColor("#9E9EA8"))
+            textSize = 12f
+            maxLines = 1
+            gravity = Gravity.END or Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
-        sidebar.addView(btnWifi)
-        sidebar.addView(btnReload)
-        sidebarScroll.addView(sidebar)
-
-        // Cột phải: Banner Wi-Fi + Danh sách game
-        val rightCol = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f)
-        }
+        headerRow.addView(title)
+        headerRow.addView(statusText)
+        root.addView(headerRow)
 
         wifiBanner = TextView(this).apply {
             visibility = View.GONE
             setTextColor(Color.WHITE)
             textSize = 13f
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setPadding(dp(12), dp(7), dp(12), dp(7))
             background = roundBg("#FF1B4D3E", "#FF43A047")
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) }
+            ).apply { bottomMargin = dp(6) }
         }
+        root.addView(wifiBanner)
 
-        statusText = TextView(this).apply {
-            setTextColor(Color.parseColor("#9E9EA8"))
-            textSize = 12f
-            setPadding(dp(4), 0, dp(4), dp(8))
-        }
-
+        // Danh sách game chiếm toàn bộ phần giữa
         val scrollView = ScrollView(this).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
+                0,
+                1f
             )
         }
 
         listContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(2), 0, dp(4))
         }
         scrollView.addView(listContainer)
+        root.addView(scrollView)
 
-        rightCol.addView(wifiBanner)
-        rightCol.addView(statusText)
-        rightCol.addView(scrollView)
+        // Thanh chọn hệ game + Wi-Fi + Quét lại nằm gọn ở dưới cùng
+        val bottomBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(44)
+            ).apply { topMargin = dp(8) }
+        }
 
-        root.addView(sidebarScroll)
-        root.addView(rightCol)
+        val tabs = listOf(
+            "NES" to "NES",
+            "SNES" to "SNES",
+            "GBA" to "GBA",
+            "PS1" to "PS1"
+        )
+        tabs.forEach { (sys, label) ->
+            val btn = createBottomButton(label, 1f) { switchSystem(sys) }
+            tabButtons[sys] = btn
+            bottomBar.addView(btn)
+        }
+
+        btnWifi = createBottomButton("📡 Wi-Fi", 1.15f) { toggleWifiServer() }.apply {
+            background = roundBg("#FF1E3A2F", "#FF2E7D32")
+        }
+        val btnReload = createBottomButton("↻ Quét", 0.9f) { loadGames() }.apply {
+            background = roundBg("#FF24242B", "#FF383844")
+        }
+
+        bottomBar.addView(btnWifi)
+        bottomBar.addView(btnReload)
+        root.addView(bottomBar)
+
         setContentView(root)
     }
 
-    private fun createSidebarButton(label: String, onClick: () -> Unit): Button {
+    private fun createBottomButton(label: String, weight: Float, onClick: () -> Unit): Button {
         return Button(this).apply {
             text = label
             isAllCaps = false
+            maxLines = 1
             setTextColor(Color.WHITE)
             textSize = 13f
-            gravity = Gravity.START or Gravity.CENTER_VERTICAL
-            setPadding(dp(12), 0, dp(10), 0)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(dp(6), 0, dp(6), 0)
+            minWidth = 0
+            minimumWidth = 0
             minHeight = 0
             minimumHeight = 0
             layoutParams = LinearLayout.LayoutParams(
+                0,
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(36)
-            ).apply { bottomMargin = dp(6) }
+                weight
+            ).apply { setMargins(dp(3), 0, dp(3), 0) }
             setOnClickListener { onClick() }
         }
     }
@@ -180,7 +196,8 @@ class MainActivity : AppCompatActivity() {
     private fun updateTabStyles() {
         tabButtons.forEach { (sys, btn) ->
             val color = if (sys == currentSystem) systemColors[sys] ?: "#FFE53935" else "#FF1D1D24"
-            btn.background = roundBg(color)
+            val stroke = if (sys == currentSystem) "#FFFFFFFF" else "#FF2E2E38"
+            btn.background = roundBg(color, stroke)
         }
     }
 
@@ -196,7 +213,7 @@ class MainActivity : AppCompatActivity() {
             current.stop()
             wifiServer = null
             wifiBanner.visibility = View.GONE
-            btnWifi.text = "📡 Nạp ROM Wi-Fi"
+            btnWifi.text = "📡 Wi-Fi"
             btnWifi.background = roundBg("#FF1E3A2F", "#FF2E7D32")
             return
         }
@@ -275,14 +292,14 @@ class MainActivity : AppCompatActivity() {
             }
         }.sortedBy { it.name.lowercase() }
 
-        statusText.text = "Thư mục: /RetroM8/$currentSystem  •  Tìm thấy ${roms.size} game"
+        statusText.text = "/RetroM8/$currentSystem  •  ${roms.size} game"
 
         if (roms.isEmpty()) {
             val hintText = when (currentSystem) {
-                "NES" -> "Chép file .nes / .zip vào RetroM8/NES hoặc bấm 'Nạp ROM Wi-Fi' bên trái."
-                "SNES" -> "Chép file .sfc / .smc / .zip vào RetroM8/SNES hoặc bấm 'Nạp ROM Wi-Fi'."
-                "GBA" -> "Chép file .gba / .zip vào RetroM8/GBA hoặc bấm 'Nạp ROM Wi-Fi'."
-                else -> "Chép file .chd / .pbp / .iso / .cue+.bin vào RetroM8/PS1 (hoặc gửi qua Wi-Fi).\nCó thể bỏ thêm scph1001.bin vào RetroM8/BIOS."
+                "NES" -> "Chép file .nes / .zip vào RetroM8/NES hoặc bấm '📡 Wi-Fi' ở dưới."
+                "SNES" -> "Chép file .sfc / .smc / .zip vào RetroM8/SNES hoặc bấm '📡 Wi-Fi' ở dưới."
+                "GBA" -> "Chép file .gba / .zip vào RetroM8/GBA hoặc bấm '📡 Wi-Fi' ở dưới."
+                else -> "Chép file .chd / .pbp / .iso / .cue+.bin vào RetroM8/PS1.\nChép thêm scph5500.bin / scph5501.bin vào RetroM8/BIOS để tránh đen màn hình."
             }
             val hint = TextView(this).apply {
                 text = "Chưa có game $currentSystem nào.\n\n$hintText"
@@ -301,7 +318,7 @@ class MainActivity : AppCompatActivity() {
                 setTextColor(Color.WHITE)
                 textSize = 14f
                 gravity = Gravity.START or Gravity.CENTER_VERTICAL
-                setPadding(dp(14), dp(10), dp(14), dp(10))
+                setPadding(dp(14), dp(11), dp(14), dp(11))
                 minHeight = 0
                 minimumHeight = 0
                 background = roundBg("#FF1C1C23", "#FF2E2E38")
@@ -329,3 +346,4 @@ class MainActivity : AppCompatActivity() {
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
 }
+// END MainActivity
