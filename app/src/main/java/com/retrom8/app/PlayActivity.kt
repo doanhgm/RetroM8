@@ -20,6 +20,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import com.swordfish.libretrodroid.GLRetroView
 import com.swordfish.libretrodroid.GLRetroViewData
+import com.swordfish.libretrodroid.Variable
 import java.io.File
 
 class PlayActivity : AppCompatActivity() {
@@ -84,6 +85,10 @@ class PlayActivity : AppCompatActivity() {
             else -> Color.parseColor("#FFE53935")
         }
 
+        if (system == "PS1") {
+            preparePs1Bios()
+        }
+
         val coreName = when (system) {
             "SNES" -> "libsnes9x.so"
             "GBA" -> "libmgba.so"
@@ -100,6 +105,12 @@ class PlayActivity : AppCompatActivity() {
             savesDirectory = savesDir.absolutePath
             rumbleEventsEnabled = true
             preferLowLatencyAudio = true
+            if (system == "PS1") {
+                variables = arrayOf(
+                    Variable("pcsx_rearmed_bios", "auto"),
+                    Variable("pcsx_rearmed_show_bios_bootlogo", "enabled")
+                )
+            }
             if (sramFile.exists()) {
                 saveRAMState = runCatching { sramFile.readBytes() }.getOrNull()
             }
@@ -115,6 +126,38 @@ class PlayActivity : AppCompatActivity() {
                 saveSramAndExit()
             }
         })
+    }
+
+    private fun preparePs1Bios() {
+        val knownBios = setOf(
+            "scph5500.bin",
+            "scph5501.bin",
+            "scph5502.bin",
+            "scph1001.bin",
+            "scph7001.bin",
+            "psxonpsp660.bin"
+        )
+        val files = biosDir.listFiles()?.filter { it.isFile } ?: emptyList()
+        files.forEach { file ->
+            val lower = file.name.lowercase()
+            if (lower in knownBios && file.name != lower) {
+                val target = File(biosDir, lower)
+                if (!target.exists()) {
+                    runCatching { file.renameTo(target) }
+                }
+            }
+        }
+        val found = biosDir.listFiles()
+            ?.filter { it.isFile && it.name.lowercase() in knownBios }
+            ?.map { it.name }
+            .orEmpty()
+
+        val msg = if (found.isNotEmpty()) {
+            "Đã nạp BIOS PS1: ${found.first()}"
+        } else {
+            "Thiếu BIOS trong /RetroM8/BIOS (đang chạy BIOS giả dễ đen màn)"
+        }
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
     private fun hideSystemUI() {
