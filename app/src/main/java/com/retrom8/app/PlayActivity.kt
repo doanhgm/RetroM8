@@ -2,6 +2,7 @@ package com.retrom8.app
 
 import android.annotation.SuppressLint
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Environment
@@ -32,16 +33,19 @@ class PlayActivity : AppCompatActivity() {
     private lateinit var dpadView: DPadView
     private lateinit var actionPadView: ActionPadView
     private lateinit var btnSizeChip: TextView
+    private lateinit var btnPauseChip: TextView
+    private lateinit var pauseOverlay: FrameLayout
 
     private val prefs by lazy { getSharedPreferences("retrom8_prefs", MODE_PRIVATE) }
 
     private var system = "NES"
     private var accentColor = Color.parseColor("#FFE53935")
-    // 0 = Vừa (156dp), 1 = To (192dp), 2 = Siêu to (224dp)
-    private var padSizeIndex = 1
-    // 0 = Vừa khung, 1 = Tràn màn (mờ 70%), 2 = Tràn màn (mờ 45%)
-    private var zoomMode = 1
+    // 0 = Vừa (150dp), 1 = To (172dp), 2 = Siêu to (196dp)
+    private var padSizeIndex = 0
+    // 0 = Vừa khung (không đè phím), 1 = Tràn màn (mờ 65%), 2 = Tràn màn (mờ 40%)
+    private var zoomMode = 0
     private var isFastForward = false
+    private var isPaused = false
     private var savePrefix = "NES_game"
 
     private val rootDir by lazy { File(Environment.getExternalStorageDirectory(), "RetroM8") }
@@ -56,7 +60,7 @@ class PlayActivity : AppCompatActivity() {
 
     private val turboRunnable = object : Runnable {
         override fun run() {
-            if (!turboAActive && !turboBActive) return
+            if (isPaused || (!turboAActive && !turboBActive)) return
             turboPhase = !turboPhase
             val action = if (turboPhase) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP
             if (turboAActive) retroView.sendKeyEvent(action, KeyEvent.KEYCODE_BUTTON_A, 0)
@@ -70,8 +74,8 @@ class PlayActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         hideSystemUI()
 
-        padSizeIndex = prefs.getInt("pref_pad_size", 1).coerceIn(0, 2)
-        zoomMode = prefs.getInt("pref_zoom_mode", 1).coerceIn(0, 2)
+        padSizeIndex = prefs.getInt("pref_pad_size", 0).coerceIn(0, 2)
+        zoomMode = prefs.getInt("pref_zoom_mode_v2", 0).coerceIn(0, 2)
 
         system = intent.getStringExtra("SYSTEM") ?: "NES"
         val romPath = intent.getStringExtra("ROM_PATH") ?: return finish()
@@ -123,9 +127,25 @@ class PlayActivity : AppCompatActivity() {
 
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                saveSramAndExit()
+                if (isPaused) {
+                    resumeGame()
+                } else {
+                    saveSramAndExit()
+                }
             }
         })
+    }
+
+    override fun onResume() {
+        super.onResume()
+        hideSystemUI()
+        if (isPaused) {
+            retroView.post {
+                if (isPaused) {
+                    runCatching { retroView.onPause() }
+                }
+            }
+        }
     }
 
     private fun preparePs1Bios() {
@@ -170,9 +190,9 @@ class PlayActivity : AppCompatActivity() {
     }
 
     private fun panelWidthDp(): Int = when (padSizeIndex) {
-        0 -> 156
-        1 -> 192
-        else -> 224
+        0 -> 150
+        1 -> 172
+        else -> 196
     }
 
     private fun padSizeLabel(): String = when (padSizeIndex) {
@@ -242,8 +262,10 @@ class PlayActivity : AppCompatActivity() {
         leftPanel.addView(selectRow)
 
         dpadView = DPadView(this, accentColor) { keyCode, pressed ->
-            val action = if (pressed) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP
-            retroView.sendKeyEvent(action, keyCode, 0)
+            if (!isPaused) {
+                val action = if (pressed) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP
+                retroView.sendKeyEvent(action, keyCode, 0)
+            }
         }.apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
@@ -303,7 +325,7 @@ class PlayActivity : AppCompatActivity() {
         rightPanel.addView(startRow)
 
         actionPadView = ActionPadView(this, system) { btn, pressed ->
-            handleActionPad(btn, pressed)
+            if (!isPaused) handleActionPad(btn, pressed)
         }.apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
@@ -320,11 +342,148 @@ class PlayActivity : AppCompatActivity() {
         rightBottom.addView(createActionChip("2X") { toggleFastForward() })
         rightPanel.addView(rightBottom)
 
+        // 4. Nút PAUSE nằm gọn ở chính giữa cạnh dưới
+        btnPauseChip = createActionChip("⏸ PAUSE") { pauseGame() }.apply {
+            textSize = 10f
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(Color.WHITE)
+            layoutParams = FrameLayout.LayoutParams(
+                dp(80),
+                dp(28),
+                Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            ).apply {
+                bottomMargin = dp(6)
+            }
+        }
+
+        // 5. Màn hình phủ khi tạm dừng
+        pauseOverlay = buildPauseOverlay()
+
         root.addView(leftPanel)
         root.addView(rightPanel)
+        root.addView(btnPauseChip)
+        root.addView(pauseOverlay)
         setContentView(root)
 
         root.post { updateGameViewport() }
+    }
+
+    private fun buildPauseOverlay(): FrameLayout {
+        val overlay = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#CC0A0A0F"))
+            visibility = View.GONE
+            isClickable = true
+            isFocusable = true
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(24), dp(18), dp(24), dp(18))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#F2181820"))
+                cornerRadius = dp(14).toFloat()
+                setStroke(2, accentColor)
+            }
+            layoutParams = FrameLayout.LayoutParams(
+                dp(240),
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER
+            )
+        }
+
+        val heading = TextView(this).apply {
+            text = "⏸  TẠM DỪNG"
+            setTextColor(Color.WHITE)
+            textSize = 17f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(0, 0, 0, dp(14))
+        }
+
+        val btnResume = TextView(this).apply {
+            text = "▶  TIẾP TỤC"
+            setTextColor(Color.WHITE)
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(dp(14), dp(11), dp(14), dp(11))
+            background = GradientDrawable().apply {
+                setColor(accentColor)
+                cornerRadius = dp(10).toFloat()
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(10) }
+            setOnClickListener {
+                hapticTick()
+                resumeGame()
+            }
+        }
+
+        val btnExit = TextView(this).apply {
+            text = "🚪  THOÁT GAME"
+            setTextColor(Color.parseColor("#D8D8E4"))
+            textSize = 13.5f
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            background = GradientDrawable().apply {
+                setColor(Color.parseColor("#FF252530"))
+                cornerRadius = dp(10).toFloat()
+                setStroke(1, Color.parseColor("#FF3E3E4C"))
+            }
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener {
+                hapticTick()
+                saveSramAndExit()
+            }
+        }
+
+        card.addView(heading)
+        card.addView(btnResume)
+        card.addView(btnExit)
+        overlay.addView(card)
+        return overlay
+    }
+
+    private fun pauseGame() {
+        if (isPaused) return
+        isPaused = true
+        stopAllTurbo()
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        runCatching { retroView.onPause() }
+        pauseOverlay.visibility = View.VISIBLE
+    }
+
+    private fun resumeGame() {
+        if (!isPaused) return
+        isPaused = false
+        pauseOverlay.visibility = View.GONE
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        runCatching {
+            retroView.onResume()
+            retroView.frameSpeed = if (isFastForward) 2 else 1
+        }
+        hideSystemUI()
+    }
+
+    private fun stopAllTurbo() {
+        turboAActive = false
+        turboBActive = false
+        turboHandler.removeCallbacks(turboRunnable)
+        runCatching {
+            retroView.sendKeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BUTTON_A, 0)
+            retroView.sendKeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BUTTON_B, 0)
+        }
     }
 
     private fun handleActionPad(btn: String, pressed: Boolean) {
@@ -380,6 +539,7 @@ class PlayActivity : AppCompatActivity() {
 
         return TextView(this).apply {
             text = label
+            maxLines = 1
             setTextColor(Color.WHITE)
             textSize = 11f
             gravity = Gravity.CENTER
@@ -388,6 +548,7 @@ class PlayActivity : AppCompatActivity() {
                 setMargins(dp(2), 0, dp(2), 0)
             }
             setOnTouchListener { _, event ->
+                if (isPaused) return@setOnTouchListener true
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
                         background = activeBg
@@ -407,8 +568,9 @@ class PlayActivity : AppCompatActivity() {
     private fun createActionChip(label: String, onClick: () -> Unit): TextView {
         return TextView(this).apply {
             text = label
+            maxLines = 1
             setTextColor(Color.parseColor("#D0D0DC"))
-            textSize = 9.5f
+            textSize = 9f
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 setColor(Color.parseColor("#AA1B1B22"))
@@ -430,8 +592,8 @@ class PlayActivity : AppCompatActivity() {
         val screenH = resources.displayMetrics.heightPixels
         val aspect = if (system == "GBA") 3f / 2f else 4f / 3f
 
-        // Cập nhật chiều rộng 2 cụm điều khiển (giới hạn tối đa 37% chiều ngang để không chạm nhau)
-        val panelW = minOf(dp(panelWidthDp()), (screenW * 0.37f).toInt())
+        // Cập nhật chiều rộng 2 cụm điều khiển
+        val panelW = minOf(dp(panelWidthDp()), (screenW * 0.34f).toInt())
         (leftPanel.layoutParams as FrameLayout.LayoutParams).width = panelW
         (rightPanel.layoutParams as FrameLayout.LayoutParams).width = panelW
         leftPanel.requestLayout()
@@ -444,20 +606,23 @@ class PlayActivity : AppCompatActivity() {
             val w = minOf(screenW, (h * aspect).toInt())
             w to h
         } else {
-            val availW = (screenW - panelW * 2).coerceAtLeast((screenW * 0.52f).toInt())
+            // Vừa khít khoảng trống giữa 2 cụm phím và không bị nút PAUSE ở dưới che
+            val availW = (screenW - panelW * 2 - dp(8)).coerceAtLeast(dp(120))
+            val availH = (screenH - dp(76)).coerceAtLeast(dp(120))
             val hFromW = (availW / aspect).toInt()
-            if (hFromW <= screenH) availW to hFromW else (screenH * aspect).toInt() to screenH
+            if (hFromW <= availH) availW to hFromW else (availH * aspect).toInt() to availH
         }
 
         gameContainer.layoutParams = FrameLayout.LayoutParams(targetW, targetH, Gravity.CENTER)
 
         val alpha = when (zoomMode) {
-            1 -> 0.70f
-            2 -> 0.45f
-            else -> if (panelW * 2 > screenW - targetW) 0.78f else 1.0f
+            1 -> 0.65f
+            2 -> 0.40f
+            else -> 1.0f
         }
         leftPanel.alpha = alpha
         rightPanel.alpha = alpha
+        btnPauseChip.alpha = alpha
     }
 
     private fun cyclePadSize() {
@@ -475,10 +640,10 @@ class PlayActivity : AppCompatActivity() {
 
     private fun cycleZoomMode() {
         zoomMode = (zoomMode + 1) % 3
-        prefs.edit().putInt("pref_zoom_mode", zoomMode).apply()
+        prefs.edit().putInt("pref_zoom_mode_v2", zoomMode).apply()
         updateGameViewport()
         val msg = when (zoomMode) {
-            0 -> "Màn hình: Vừa khung"
+            0 -> "Màn hình: Vừa khung (không đè phím)"
             1 -> "Màn hình: Tràn viền (Phím mờ vừa)"
             else -> "Màn hình: Tràn viền (Phím siêu mờ)"
         }
